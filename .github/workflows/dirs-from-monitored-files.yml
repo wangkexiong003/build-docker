@@ -1,0 +1,40 @@
+name: Get directories from monitored files changes
+
+on:
+  workflow_call:
+    inputs:
+      files:
+        description: 'Files to monitor and pass to tj-actions/changed-files'
+        required: true
+        type: string
+
+jobs:
+  workingdir:
+    runs-on: ubuntu-latest
+    outputs:
+      all: ${{ steps.changed-dirs.outputs.all }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get Updated Files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            Dockerfile$
+            Dockervar$
+      - name: Get Updated Directories
+        id: changed-dirs
+        run: |
+          RESULT=
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            RESULT="$(dirname $file) $RESULT"
+          done
+          RESULT=$(echo $RESULT | sed 's/ /\n/g' | sort | uniq | xargs)
+          RESULT=$(echo $RESULT | jq -Rcr 'split(" ")')
+
+          echo "all=${RESULT}" >> ${GITHUB_OUTPUT}}
+      - name: List Changed Directories
+        run: |
+          echo '${{ steps.changed-dirs.outputs.all }}'
