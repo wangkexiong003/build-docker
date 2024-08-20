@@ -1,0 +1,99 @@
+name: ⚙️ Build/Test Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      context:
+        description: 'the set of files located in the specified PATH or URL'
+        required: true
+        type: string
+      tags:
+        description: 'the set of tags to apply to the image (List/CSV)'
+        required: true
+        type: string
+      push:
+        description: 'shorthand for --output=type=registry'
+        required: true
+        type: string 
+      build_args:
+        description: 'build-time variables (List/CSV)'
+        required: false
+        type: string
+      platforms:
+        description: 'target platforms for build (List/CSV)'
+        required: false
+        type: string
+      test_entrypoint:
+        description: 'ENTRYPOINT used while testing for the local built image'
+        required: false
+        type: string
+      test_cmd:
+        description: 'CMD used while testing for the local built image'
+        required: false
+        type: string
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_PASSWORD:
+        required: true
+
+jobs:
+  build-test-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parameters Handling
+        id: params
+        run: |
+          echo "context=${{ inputs.context }}"                 >> ${GITHUB_OUTPUT}
+          echo "tags=${{ inputs.tags }}"                       >> ${GITHUB_OUTPUT}
+          echo "push=${{ inputs.push }}"                       >> ${GITHUB_OUTPUT}
+          echo "platforms=${{ inputs.platforms }}"             >> ${GITHUB_OUTPUT}
+          echo "test_entrypoint=${{ inputs.test_entrypoint }}" >> ${GITHUB_OUTPUT}
+          echo "test_cmd=${{ inputs.test_cmd }}"               >> ${GITHUB_OUTPUT}
+
+          if [ -n "${{ inputs.build_args }}" ]; then
+            temp="$(echo ${{ inputs.build_args }} | tr ',' '\n')"
+            echo "build_args<<EOF"    >> ${GITHUB_OUTPUT}
+            echo "${temp//'%'/'%25'}" >> ${GITHUB_OUTPUT}
+            echo "EOF"                >> ${GITHUB_OUTPUT}
+          fi
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context:    ${{ steps.params.outputs.context }}
+          build-args: ${{ steps.params.outputs.build_args }}
+          tags:       test:latest,${{ steps.params.outputs.tags }}
+          load: true
+          push: false
+      - name: Test Build Image
+        run: |
+          test_entrypoint="${{ steps.params.outputs.test_entrypoint }}"
+          test_cmd="${{ steps.params.outputs.test_cmd }}"
+
+          if [ -n "${test_entrypoint}" ] || [ -n "${test_cmd}" ]; then
+            DOCKER_TEST="docker run -t"
+            [ -n "${test_entrypoint}" ] && DOCKER_TEST="${DOCKER_TEST} --entrypoint=${test_entrypoint}"
+            DOCKER_TEST="${DOCKER_TEST} test:latest"
+            [ -n "${test_cmd}" ] && DOCKER_TEST="${DOCKER_TEST} ${test_cmd}"
+            echo ${DOCKER_TEST} > /tmp/DOCKER_TEST.sh
+
+            cat /tmp/DOCKER_TEST.sh
+            /bin/bash /tmp/DOCKER_TEST.sh
+          else
+            echo "SKIP testing..."
+          fi
+      - name: Build and Push Image
+        uses: docker/build-push-action@v6
+        if: ${{ steps.params.outputs.push == 'true' }}
+        with:
+          context:    ${{ steps.params.outputs.context }}
+          platforms:  ${{ steps.params.outputs.platforms }}
+          build-args: ${{ steps.params.outputs.build_args }}
+          tags:       ${{ steps.params.outputs.tags }}
+          push:       true

@@ -1,4 +1,4 @@
-name: Build Docker
+name: Parallel Build Docker Images
 
 on:
   push:
@@ -7,10 +7,10 @@ on:
       - '**/Dockervar'
 
 jobs:
-  find-changes:
+  prepare-build:
     runs-on: ubuntu-latest
     outputs:
-      all: ${{ steps.changed-files.outputs.all_modified_files }}
+      params: ${{ steps.prepare-params.outputs.params }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,79 +19,98 @@ jobs:
         id: changed-files
         uses: tj-actions/changed-files@v44
         with:
-          matrix: true
           dir_names: true
+          matrix: true
           files: |
             **/Dockerfile
             **/Dockervar
+      - name: Prepare Parameters
+        id: prepare-params
+        run: |
+          function getDockerConfig() {
+            local config_file="$1"
+            local config_name="$2"
+            if [[ -f "${config_file}" && -n "${config_name}" ]]; then
+              echo "$(cat "${config_file}" | grep ^${config_name}[\ ]*= | awk -F'=' '{printf substr($0, index($0, $2))}' | xargs)"
+            fi
+          }
+
+          param_array=()
+          while read -r dir; do
+            if [ ! -f "${dir}/Dockerfile" ]; then
+              echo "There is NO Dockerfile under ${dir}, skip..."
+              continue
+            fi
+
+            if [ -f ${dir}/Dockervar ]; then
+              printf -v DOCKER_REPO            "%s" "$(getDockerConfig "${dir}/Dockervar" DOCKER_REPO)"
+              printf -v DOCKER_TAG             "%s" "$(getDockerConfig "${dir}/Dockervar" DOCKER_TAG)"
+              printf -v DOCKER_TAG_ONLY        "%s" "$(getDockerConfig "${dir}/Dockervar" DOCKER_TAG_ONLY)"
+              printf -v DOCKER_PLATFORMS       "%s" "$(getDockerConfig "${dir}/Dockervar" DOCKER_PLATFORMS)"
+              printf -v DOCKER_TEST_ENTRYPOINT "%s" "$(getDockerConfig "${dir}/Dockervar" DOCKER_TEST_ENTRYPOINT)"
+              printf -v DOCKER_TEST_CMD        "%s" "$(getDockerConfig "${dir}/Dockervar" DOCKER_TEST_CMD)"
+
+              BUILD_ARGS="$(cat ${dir}/Dockervar | grep -v ^# | grep -v ^DOCKER | grep "\S" | paste -sd ,)"
+
+              if [ -n "${DOCKER_REPO}" ]; then
+                DOCKER_PUSH=true
+                BUILD_TAGS="${DOCKER_REPO}:latest"
+                if [ -n "${DOCKER_TAG}" ]; then
+                  if [ -n "${DOCKER_TAG_ONLY}" ]; then
+                    BUILD_TAGS="${DOCKER_REPO}:${DOCKER_TAG}"
+                  else
+                    BUILD_TAGS="${DOCKER_REPO}:${DOCKER_TAG},${BUILD_TAGS}"
+                  fi
+                else
+                  DOCKER_TAG=latest
+                fi
+              else
+                DOCKER_REPO=test
+                DOCKER_TAG=latest
+                DOCKER_PUSH=false
+                BUILD_TAGS="test:latest"
+              fi
+            else
+              DOCKER_REPO=test
+              DOCKER_TAG=latest
+              DOCKER_PUSH=false
+              BUILD_TAGS="test:latest"
+            fi
+
+            echo "context=${dir}"       > /tmp/input.txt
+            echo "tags=${BUILD_TAGS}"  >> /tmp/input.txt
+            echo "push=${DOCKER_PUSH}" >> /tmp/input.txt
+            [ -n "${BUILD_ARGS}" ]             && echo "build_args=${BUILD_ARGS}"                  >> /tmp/input.txt
+            [ -n "${DOCKER_PLATFORMS}" ]       && echo "platforms=${DOCKER_PLATFORMS}"             >> /tmp/input.txt
+            [ -n "${DOCKER_TEST_ENTRYPOINT}" ] && echo "test_entrypoint=${DOCKER_TEST_ENTRYPOINT}" >> /tmp/input.txt
+            [ -n "${DOCKER_TEST_CMD}" ]        && echo "test_cmd=${DOCKER_TEST_CMD}"               >> /tmp/input.txt
+
+            input_param="$(awk -F'=' '{printf "\"%s\":\"%s\"\n", $1, substr($0, index($0, $2))}' /tmp/input.txt | paste -sd ,)"
+            echo "For ${dir}:"
+            echo "${input_param}"
+            param_array+=("{${input_param}}")
+          done < <(echo '${{ steps.changed-files.outputs.all_modified_files }}' | jq -r '.[]')
+
+          params_json="$(echo "${param_array[@]}" | jq -sc .)"
+          echo "params=${params_json}" >> $GITHUB_OUTPUT
 
   build-image:
-    needs: find-changes
-    if: ${{ needs.find-changes.outputs.all != '' }}
+    needs: prepare-build
+    if: ${{ needs.prepare-build.outputs.params != '[]' }}
     strategy:
       fail-fast: false
       matrix:
-        dir: ${{ fromJson(needs.find-changes.outputs.all) }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Import Build variables
-        id: checking
-        run: |
-          context_available=false
-          if [ -f ${{ matrix.dir }}/Dockerfile ]; then
-            context_available=true
-            if [ -f ${{ matrix.dir }}/Dockervar ]; then
-              grep ^DOCKER_.*= ${{ matrix.dir }}/Dockervar >> ${GITHUB_ENV} || true
-            fi
-          fi
-
-          echo "context_available=${context_available}" >> ${GITHUB_OUTPUT}
-      - name: Prepare Build Parameters
-        if: ${{ steps.checking.outputs.context_available == 'true' }}
-        id: config
-        run: |
-          if [ -n "${DOCKER_REPO}" ]; then
-            DOCKER_PUSH=true
-            BUILD_TAGS="${DOCKER_REPO}:latest"
-            if [ -n "${DOCKER_TAG}" ]; then
-              if [ -n "${DOCKER_TAG_ONLY}" ]; then
-                BUILD_TAGS="${DOCKER_REPO}:${DOCKER_TAG}"
-              else
-                BUILD_TAGS="${DOCKER_REPO}:${DOCKER_TAG},${BUILD_TAGS}"
-              fi
-            else
-              echo "DOCKER_TAG=latest" >> ${GITHUB_ENV}
-            fi
-          else
-            DOCKER_PUSH=false
-            BUILD_TAGS="test:latest"
-
-            echo "DOCKER_REPO=test"  >> ${GITHUB_ENV}
-            echo "DOCKER_TAG=latest" >> ${GITHUB_ENV}
-          fi
-
-          echo "tags=${BUILD_TAGS}"  >> ${GITHUB_OUTPUT}
-          echo "push=${DOCKER_PUSH}" >> ${GITHUB_OUTPUT}
-
-          if [ -f ${{ matrix.dir }}/Dockervar ]; then
-            BUILD_ARGS=$(cat ${{ matrix.dir }}/Dockervar | grep -v ^# | grep -v ^DOCKER | grep "\S") || true
-            if [ -n "${BUILD_ARGS}" ]; then
-              echo "build-args<<EOF"          >> ${GITHUB_OUTPUT}
-              echo "${BUILD_ARGS//'%'/'%25'}" >> ${GITHUB_OUTPUT}
-              echo "EOF"                      >> ${GITHUB_OUTPUT}
-            fi
-          fi
-      - name: Build and Test
-        if: ${{ steps.checking.outputs.context_available == 'true' }}
-        uses: ./.github/workflows/docker-images
-        with:
-          context: ${{ matrix.dir }}
-          tags: ${{ steps.config.outputs.tags }}
-          push: ${{ steps.config.outputs.push }}
-          build-args: ${{ steps.config.outputs.build-args }}
-          platforms: ${{ env.DOCKER_PLATFORMS }}
-          test-entrypoint: ${{ env.DOCKER_TEST_ENTRYPOINT }}
-          test-cmd: ${{ env.DOCKER_TEST_CMD }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+        params: ${{ fromJSON(needs.prepare-build.outputs.params) }}
+    name: ⚙️ build-image (${{ matrix.params.context }})
+    uses: ./.github/workflows/docker-images.yml
+    with:
+      context:    ${{ matrix.params.context }}
+      tags:       ${{ matrix.params.tags }}
+      push:       ${{ matrix.params.push }}
+      build_args: ${{ matrix.params.build_args }}
+      platforms:  ${{ matrix.params.platforms }}
+      test_entrypoint: ${{ matrix.params.test_entrypoint }}
+      test_cmd:   ${{ matrix.params.test_cmd }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
