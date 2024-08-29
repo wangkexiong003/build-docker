@@ -5,8 +5,8 @@ ARG PYTHON_VERSION=3.10.14
 ARG PYTHON_CONFIG_ARGS="--enable-shared --enable-ipv6 --with-system-expat"
 
 WORKDIR /home
-RUN export DEBIAN_FRONTEND=noninteractive
-    && export DEBCONF_NONINTERACTIVE_SEEN=true
+RUN export DEBIAN_FRONTEND=noninteractive \
+    && export DEBCONF_NONINTERACTIVE_SEEN=true \
     && apt-get update
 RUN apt-get install -y make build-essential wget curl llvm git file rsync inotify-tools patch
 RUN apt-get install -y libssl-dev zlib1g-dev libexpat1-dev libbz2-dev libreadline-dev \
@@ -30,8 +30,8 @@ RUN find /buildfiles -exec file {} + | grep -i 'elf.*not stripped' | awk -F: '{p
 FROM ubuntu:24.04
 LABEL maintainer=wangkexiong
 
-RUN export DEBIAN_FRONTEND=noninteractive
-    && export DEBCONF_NONINTERACTIVE_SEEN=true
+RUN export DEBIAN_FRONTEND=noninteractive \
+    && export DEBCONF_NONINTERACTIVE_SEEN=true \
     && apt-get update \
     && apt-get install -y libssl3 zlib1g libexpat1 libbz2-1.0 libreadline8 libsqlite3-0 libncurses \
                           libffi8 liblzma5 libpcre3 libcap2 libxml2 libjansson4 libuuid1 libtk \
