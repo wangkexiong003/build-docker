@@ -9,7 +9,7 @@ RUN apk add bash wget curl git rsync inotify-tools findutils file patch gcc make
 RUN apk add readline-dev bzip2-dev sqlite-dev expat-dev libffi-dev zlib-dev openssl-dev xz-dev ncurses-dev \
             pcre-dev jansson-dev libxml2-dev openssl-dev libcap-dev util-linux-dev tk-dev
 RUN curl -fsSL https://pyenv.run | bash
-RUN wget https://github.com/unbit/uwsgi/archive/refs/tags/${UWSGI_VERSION}.tar.gz && tar xzvf uwsgi-${UWSGI_VERSION}.tar.gz
+RUN wget -qO- https://github.com/unbit/uwsgi/archive/refs/tags/${UWSGI_VERSION}.tar.gz && tar xzv
 
 RUN inotifywait -m -r -e create,modify,delete /usr/local | while read path action file; do \
       mkdir -p "/buildfiles${path}"; rsync -av "${path}/${file}" /buildfiles${path}; \

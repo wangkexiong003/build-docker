@@ -8,11 +8,10 @@ WORKDIR /home
 RUN apt-get update
 RUN apt-get install -y make build-essential wget curl llvm git file rsync inotify-tools patch
 RUN apt-get install -y libssl-dev zlib1g-dev libexpat1-dev libbz2-dev libreadline-dev \
-                       libsqlite3-dev libncurses5-dev libffi-dev liblzma-dev xz-utils \
-                       libpcre3-dev libssl-dev libcap-dev libxml2-dev libjansson-dev \
-                       uuid-dev tk-dev
+                       libsqlite3-dev libncurses-dev libffi-dev liblzma-dev xz-utils \
+                       libpcre3-dev libcap-dev libxml2-dev libjansson-dev uuid-dev tk-dev
 RUN curl -fsSL https://pyenv.run | bash
-RUN wget https://github.com/unbit/uwsgi/archive/refs/tags/${UWSGI_VERSION}.tar.gz && tar xzvf uwsgi-${UWSGI_VERSION}.tar.gz
+RUN wget -qO- https://github.com/unbit/uwsgi/archive/refs/tags/${UWSGI_VERSION}.tar.gz && tar xzv
 
 RUN inotifywait -m -r -e create,modify,delete /usr/local | while read path action file; do \
       mkdir -p "/buildfiles${path}"; rsync -av "${path}/${file}" /buildfiles${path}; \
