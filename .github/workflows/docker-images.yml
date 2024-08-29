@@ -14,7 +14,7 @@ on:
       push:
         description: 'shorthand for --output=type=registry'
         required: true
-        type: string 
+        type: string
       build_args:
         description: 'build-time variables (List/CSV)'
         required: false
