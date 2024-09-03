@@ -11,13 +11,18 @@ RUN apk add readline-dev bzip2-dev sqlite-dev expat-dev libffi-dev zlib-dev open
 RUN curl -fsSL https://pyenv.run | bash
 RUN wget https://github.com/unbit/uwsgi/archive/refs/tags/${UWSGI_VERSION}.tar.gz && tar xzvf ${UWSGI_VERSION}.tar.gz
 
-RUN inotifywait -m -r -e create,modify,delete /usr/local | while read path action file; do \
-      mkdir -p "/buildfiles${path}"; rsync -av "${path}/${file}" /buildfiles${path}; \
-    done 1>/dev/null &
-RUN bash -c "PYTHON_CONFIGURE_OPTS=\"${PYTHON_CONFIG_ARGS}\" /root/.pyenv/plugins/python-build/bin/python-build ${PYTHON_VERSION} /usr/local"
-RUN bash -c "cd uwsgi-${UWSGI_VERSION} && make package && \
-             python uwsgiconfig.py --plugin plugins/python core"
+RUN touch /tmp/monitor.txt && inotifywait -qr -e "create,modify" --format "%w,%f" -d -o /tmp/monitor.txt /usr/local \
+    && bash -c "PYTHON_CONFIGURE_OPTS=\"${PYTHON_CONFIG_ARGS}\" /root/.pyenv/plugins/python-build/bin/python-build ${PYTHON_VERSION} /usr/local"
+RUN cat /tmp/monitor.txt | sort | uniq > /tmp/monitor_files.txt
+RUN while IFS=',' read -r DIR NAME; do \
+      if [ "${NAME}" = "" ]; then \
+        mkdir -p /buildfiles/${DIR}; \
+      else \
+        rsync -av "${DIR}/${NAME}" "/buildfiles/${DIR}" --mkpath; \
+      fi \
+    done < /tmp/monitor_files.txt
 
+RUN bash -c "cd uwsgi-${UWSGI_VERSION} && make package && python uwsgiconfig.py --plugin plugins/python core"
 RUN mkdir -p /buildfiles/usr/local/bin /buildfiles/usr/local/lib/uwsgi
 RUN cp /home/uwsgi-${UWSGI_VERSION}/uwsgi /buildfiles/usr/local/bin/. && \
     cp /home/uwsgi-${UWSGI_VERSION}/python_plugin.so /buildfiles/usr/local/lib/uwsgi/.

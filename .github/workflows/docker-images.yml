@@ -45,12 +45,24 @@ jobs:
       - name: Parameters Handling
         id: params
         run: |
-          echo "context=${{ inputs.context }}"                 >> ${GITHUB_OUTPUT}
-          echo "tags=${{ inputs.tags }}"                       >> ${GITHUB_OUTPUT}
-          echo "push=${{ inputs.push }}"                       >> ${GITHUB_OUTPUT}
-          echo "platforms=${{ inputs.platforms }}"             >> ${GITHUB_OUTPUT}
-          echo "test_entrypoint=${{ inputs.test_entrypoint }}" >> ${GITHUB_OUTPUT}
-          echo "test_cmd=${{ inputs.test_cmd }}"               >> ${GITHUB_OUTPUT}
+          context="${{ inputs.context }}"
+          echo "context=${context}"                 >> ${GITHUB_OUTPUT}
+          tags="${{ inputs.tags }}"
+          echo "tags=${tags}"                       >> ${GITHUB_OUTPUT}
+          push="${{ inputs.push }}"
+          echo "push=${push}"                       >> ${GITHUB_OUTPUT}
+          platforms="${{ inputs.platforms }}"
+          echo "platforms=${platforms}"             >> ${GITHUB_OUTPUT}
+          test_entrypoint=$(cat <<EOF
+          ${{ inputs.test_entrypoint }}
+          EOF
+          )
+          echo "test_entrypoint=${test_entrypoint}" >> ${GITHUB_OUTPUT}
+          test_cmd=$(cat <<EOF
+          ${{ inputs.test_cmd }}
+          EOF
+          )
+          echo "test_cmd=${test_cmd}"               >> ${GITHUB_OUTPUT}
 
           if [ -n "${{ inputs.build_args }}" ]; then
             temp="$(echo ${{ inputs.build_args }} | tr ',' '\n')"
@@ -73,8 +85,14 @@ jobs:
           push: false
       - name: Test Build Image
         run: |
-          test_entrypoint="${{ steps.params.outputs.test_entrypoint }}"
-          test_cmd="${{ steps.params.outputs.test_cmd }}"
+          test_entrypoint=$(cat <<EOF
+          ${{ steps.params.outputs.test_entrypoint }}
+          EOF
+          )
+          test_cmd=$(cat <<EOF
+          ${{ steps.params.outputs.test_cmd }}
+          EOF
+          )
 
           if [ -n "${test_entrypoint}" ] || [ -n "${test_cmd}" ]; then
             DOCKER_TEST="docker run -t"

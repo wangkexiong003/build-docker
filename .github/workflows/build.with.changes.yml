@@ -31,7 +31,7 @@ jobs:
             local config_file="$1"
             local config_name="$2"
             if [[ -f "${config_file}" && -n "${config_name}" ]]; then
-              echo "$(cat "${config_file}" | grep ^${config_name}[\ ]*= | awk -F'=' '{printf substr($0, index($0, $2))}' | xargs)"
+              echo "$(cat "${config_file}" | grep ^${config_name}[\ ]*= | awk -F'=' '{printf substr($0, index($0, $2))}')"
             fi
           }
 
@@ -85,7 +85,7 @@ jobs:
             [ -n "${DOCKER_TEST_ENTRYPOINT}" ] && echo "test_entrypoint=${DOCKER_TEST_ENTRYPOINT}" >> /tmp/input.txt
             [ -n "${DOCKER_TEST_CMD}" ]        && echo "test_cmd=${DOCKER_TEST_CMD}"               >> /tmp/input.txt
 
-            input_param="$(awk -F'=' '{printf "\"%s\":\"%s\"\n", $1, substr($0, index($0, $2))}' /tmp/input.txt | paste -sd ,)"
+            input_param="$(awk -F'=' '{gsub(/"/, "\\\"");printf "\"%s\":\"%s\"\n", $1, substr($0, index($0, $2))}' /tmp/input.txt | paste -sd ,)"
             echo "For ${dir}:"
             echo "${input_param}"
             param_array+=("{${input_param}}")
