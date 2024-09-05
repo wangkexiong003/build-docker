@@ -46,3 +46,4 @@ WORKDIR /app
 EXPOSE 3031
 
 CMD if [ -f uwsgi.ini ]; then /bin/bash -l -c "uwsgi --ini uwsgi.ini"; else /bin/bash; fi
+
