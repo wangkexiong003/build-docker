@@ -26,7 +26,7 @@ RUN find /usr/local ! -type d > /tmp/snapshot_before.txt
 RUN bash -c "PYTHON_CONFIGURE_OPTS=\"${PYTHON_CONFIG_ARGS}\" /root/.pyenv/plugins/python-build/bin/python-build ${PYTHON_VERSION} /usr/local"
 RUN find /usr/local ! -type d > /tmp/snapshot_after.txt \
     && comm -23 <(sort /tmp/snapshot_after.txt) <(sort /tmp/snapshot_before.txt) > /tmp/files_copy.txt \
-    && rsync -av --files-from="/tmp/files_copy.txt" /usr/local /buildfiles/usr/local
+    && rsync -av --files-from="/tmp/files_copy.txt" / /buildfiles
 
 RUN bash -c "cd uwsgi-${UWSGI_VERSION} && make package && python uwsgiconfig.py --plugin plugins/python core"
 RUN mkdir -p /buildfiles/usr/local/{bin,lib/uwsgi}
