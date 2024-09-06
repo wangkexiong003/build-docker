@@ -29,7 +29,7 @@ RUN find /usr/local ! -type d > /tmp/snapshot_after.txt \
     && rsync -av --files-from="/tmp/files_copy.txt" / /buildfiles
 
 RUN bash -c "cd uwsgi-${UWSGI_VERSION} && make package && python uwsgiconfig.py --plugin plugins/python core"
-RUN mkdir -p /buildfiles/usr/local/{bin,lib/uwsgi} \
+RUN mkdir -p /buildfiles/usr/local/bin /buildfiles/usr/local/lib/uwsgi \
     && cp /home/uwsgi-${UWSGI_VERSION}/uwsgi /buildfiles/usr/local/bin/. \
     && cp /home/uwsgi-${UWSGI_VERSION}/python_plugin.so /buildfiles/usr/local/lib/uwsgi/.
 RUN find /buildfiles -name *.pyc -o -name *.pyo | xargs rm -rf
