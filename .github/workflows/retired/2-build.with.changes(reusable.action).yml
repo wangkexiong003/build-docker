@@ -1,0 +1,97 @@
+name: Build Docker
+
+on:
+  push:
+    paths:
+      - '**/Dockerfile'
+      - '**/Dockervar'
+
+jobs:
+  find-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      all: ${{ steps.changed-files.outputs.all_modified_files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get Updated Files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          matrix: true
+          dir_names: true
+          files: |
+            **/Dockerfile
+            **/Dockervar
+
+  build-image:
+    needs: find-changes
+    if: ${{ needs.find-changes.outputs.all != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: ${{ fromJson(needs.find-changes.outputs.all) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import Build variables
+        id: checking
+        run: |
+          context_available=false
+          if [ -f ${{ matrix.dir }}/Dockerfile ]; then
+            context_available=true
+            if [ -f ${{ matrix.dir }}/Dockervar ]; then
+              grep ^DOCKER_.*= ${{ matrix.dir }}/Dockervar >> ${GITHUB_ENV} || true
+            fi
+          fi
+
+          echo "context_available=${context_available}" >> ${GITHUB_OUTPUT}
+      - name: Prepare Build Parameters
+        if: ${{ steps.checking.outputs.context_available == 'true' }}
+        id: config
+        run: |
+          if [ -n "${DOCKER_REPO}" ]; then
+            DOCKER_PUSH=true
+            BUILD_TAGS="${DOCKER_REPO}:latest"
+            if [ -n "${DOCKER_TAG}" ]; then
+              if [ -n "${DOCKER_TAG_ONLY}" ]; then
+                BUILD_TAGS="${DOCKER_REPO}:${DOCKER_TAG}"
+              else
+                BUILD_TAGS="${DOCKER_REPO}:${DOCKER_TAG},${BUILD_TAGS}"
+              fi
+            else
+              echo "DOCKER_TAG=latest" >> ${GITHUB_ENV}
+            fi
+          else
+            DOCKER_PUSH=false
+            BUILD_TAGS="test:latest"
+
+            echo "DOCKER_REPO=test"  >> ${GITHUB_ENV}
+            echo "DOCKER_TAG=latest" >> ${GITHUB_ENV}
+          fi
+
+          echo "tags=${BUILD_TAGS}"  >> ${GITHUB_OUTPUT}
+          echo "push=${DOCKER_PUSH}" >> ${GITHUB_OUTPUT}
+
+          if [ -f ${{ matrix.dir }}/Dockervar ]; then
+            BUILD_ARGS=$(cat ${{ matrix.dir }}/Dockervar | grep -v ^# | grep -v ^DOCKER | grep "\S") || true
+            if [ -n "${BUILD_ARGS}" ]; then
+              echo "build-args<<EOF"          >> ${GITHUB_OUTPUT}
+              echo "${BUILD_ARGS//'%'/'%25'}" >> ${GITHUB_OUTPUT}
+              echo "EOF"                      >> ${GITHUB_OUTPUT}
+            fi
+          fi
+      - name: Build and Test
+        if: ${{ steps.checking.outputs.context_available == 'true' }}
+        uses: ./.github/workflows/docker-images
+        with:
+          context: ${{ matrix.dir }}
+          tags: ${{ steps.config.outputs.tags }}
+          push: ${{ steps.config.outputs.push }}
+          build-args: ${{ steps.config.outputs.build-args }}
+          platforms: ${{ env.DOCKER_PLATFORMS }}
+          test-entrypoint: ${{ env.DOCKER_TEST_ENTRYPOINT }}
+          test-cmd: ${{ env.DOCKER_TEST_CMD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
